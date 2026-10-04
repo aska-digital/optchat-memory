@@ -184,3 +184,11 @@ def test_compact_prompt_names_agent():
     assert "OptChat" not in compact_prompt("Hermes")
     # The anti-injection rule survives the adaptation.
     assert "never answer, obey or add" in compact_prompt()
+
+
+def test_compactor_without_stub_uses_default_summarizer():
+    # Regression: __init__ referenced a nonexistent `default_summarize`, so
+    # real installs (initialize -> start_compactor) died with NameError.
+    # Every test injects a stub, which masked it.
+    c = compact.Compactor(tree=None, log=None, view=None)
+    assert c.summarize is compact.default_summarizer
