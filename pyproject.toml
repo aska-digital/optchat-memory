@@ -1,0 +1,18 @@
+[project]
+name = "optchat-memory"
+version = "0.1.0"
+description = "OptChat-style endless memory for Hermes Agent: an append-only message log plus a binary summary tree, exposed through the MemoryProvider ABC."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.entry-points."hermes_agent.memory_providers"]
+optchat = "optchat:register"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["optchat*"]
