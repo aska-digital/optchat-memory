@@ -1,0 +1,9 @@
+name: optchat
+version: 0.1.0
+description: "OptChat-style endless memory for Hermes: an append-only verbatim log plus a binary summary tree, exposed as recall through the MemoryProvider ABC."
+requires_hermes: ">=0.21.4"
+kind: exclusive
+platforms: [linux, macos, windows]
+author: aska-digital
+license: MIT
+tags: [memory-provider, local-first, long-term-memory]

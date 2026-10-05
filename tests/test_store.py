@@ -1,6 +1,8 @@
 """Tests for the append-only log (optchat/store.py)."""
 
 import json
+import os
+import stat
 import sys
 from pathlib import Path
 
@@ -87,3 +89,27 @@ def test_day_files_are_valid_jsonl(tmp_path):
         for line in path.read_text(encoding="utf-8").splitlines():
             obj = json.loads(line)
             assert {"i", "kind", "text", "size", "date"} <= set(obj)
+
+
+def test_lock_helpers_exist():
+    # Review item 4: the platform lock pair must exist at module scope so the
+    # Windows (msvcrt) and POSIX (fcntl) branches are both importable seams.
+    from optchat import store
+
+    assert callable(store._lock_exclusive_nb)
+    assert callable(store._unlock)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits")
+def test_log_and_lock_files_are_owner_only(tmp_path):
+    # Review item 5: the day log and main/.lock are created 0600.
+    root = tmp_path / "home" / "optchat"
+    log = ChatLog(root)
+    try:
+        log.append("user", "secret")
+        day_file = next((root / "main").glob("*.jsonl"))
+        lock_file = root / "main" / ".lock"
+        assert stat.S_IMODE(os.stat(day_file).st_mode) == 0o600
+        assert stat.S_IMODE(os.stat(lock_file).st_mode) == 0o600
+    finally:
+        log.close()

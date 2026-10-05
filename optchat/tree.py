@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from threading import RLock
@@ -79,11 +80,17 @@ class SummaryTree:
                 "size": len(text.encode("utf-8")),
                 "date": datetime.now().astimezone().isoformat(),
             }
-            with open(self._today_path(), "a", encoding="utf-8") as fh:
+            path = self._today_path()
+            # Create owner-only (0600) so a shared home never exposes the tree.
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            try:
+                os.chmod(path, 0o600)  # force even when the file pre-existed looser
+            except OSError:
+                pass
+            with os.fdopen(fd, "a", encoding="utf-8") as fh:
+                fh.seek(0, os.SEEK_END)  # O_APPEND offset isn't reflected in Python's tell
                 fh.write(json.dumps(obj, ensure_ascii=False) + "\n")
                 fh.flush()
-                import os
-
                 os.fsync(fh.fileno())
             self._nodes[(l, i)] = text
 

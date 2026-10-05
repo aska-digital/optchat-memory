@@ -4,8 +4,12 @@ Uses a stub summarizer (no LLM): deterministic one-line summaries, with
 an overshoot-then-comply variant for the size-enforcement test.
 """
 
+import os
+import stat
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -192,3 +196,14 @@ def test_compactor_without_stub_uses_default_summarizer():
     # Every test injects a stub, which masked it.
     c = compact.Compactor(tree=None, log=None, view=None)
     assert c.summarize is compact.default_summarizer
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits")
+def test_tree_day_file_is_owner_only(tmp_path):
+    # Review item 5: tree day files are created 0600 like the log.
+    root = tmp_path / "optchat"
+    tree = SummaryTree(root)
+    tree.set(0, 0, "one line")
+    day_file = next((root / "tree").glob("*.jsonl"))
+    assert stat.S_IMODE(os.stat(day_file).st_mode) == 0o600
+    assert tree.get(0, 0) == "one line"  # content still lands and reads back

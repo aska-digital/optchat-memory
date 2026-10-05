@@ -9,20 +9,22 @@ Layout: ``<root>/main/YYYY-MM-DD.jsonl`` — one JSON object per line::
 name + JSON input), ``echo`` (tool results), ``note`` (imported history).
 
 Durability: each line is written with one ``write()`` + ``fsync()`` before
-the call returns. Single writer per root: a non-blocking ``fcntl`` lock on
-``main/.lock`` is held for the process lifetime; a second process gets a
-loud ``LogLocked`` instead of a corrupted log (the spec uses a Unix socket
-for the same purpose). Torn lines (a crash mid-write) are reported and
-skipped at load; a file not ending in ``\\n`` gets one appended.
+the call returns. Single writer per root: a non-blocking file lock on
+``main/.lock`` — ``fcntl.flock`` on POSIX, ``msvcrt.locking`` on Windows —
+is held for the process lifetime; a second process gets a loud ``LogLocked``
+instead of a corrupted log (the spec uses a Unix socket for the same
+purpose). Torn lines (a crash mid-write) are reported and skipped at load;
+a file not ending in ``\\n`` gets one appended. Every log and lock file is
+created owner-only (0600) so a shared home never exposes the transcript.
 
 Never edit or delete: the log is history.
 """
 
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from threading import RLock
@@ -31,6 +33,39 @@ from typing import Iterator, Optional
 logger = logging.getLogger(__name__)
 
 KINDS = ("user", "talk", "tool", "echo", "note")
+
+
+if os.name == "nt":  # Windows has no fcntl; lock one byte with msvcrt instead.
+    import msvcrt
+
+    def _lock_exclusive_nb(handle) -> None:
+        """Non-blocking exclusive lock. Raises OSError when held (Windows)."""
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+
+    def _unlock(handle) -> None:
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+else:  # POSIX
+    import fcntl
+
+    def _lock_exclusive_nb(handle) -> None:
+        """Non-blocking exclusive lock. Raises OSError when held (POSIX)."""
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _unlock(handle) -> None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _open_append(path, *, mode: str = "ab"):
+    """Open (creating with 0600) and append; POSIX owner-only from the first byte."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.chmod(path, 0o600)  # force even when the file pre-existed under a looser mode
+    except OSError:
+        pass
+    return os.fdopen(fd, mode)
 
 
 class LogLocked(RuntimeError):
@@ -44,9 +79,16 @@ class ChatLog:
         self.root = Path(root)
         self.main_dir = self.root / "main"
         self.main_dir.mkdir(parents=True, exist_ok=True)
-        self._lock_file = open(self.main_dir / ".lock", "w")
+        lock_path = self.main_dir / ".lock"
+        # "a+" never truncates an existing file, so a Windows byte-lock target
+        # survives re-open; the lock file is also forced owner-only.
+        self._lock_file = open(lock_path, "a+")
         try:
-            fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            os.chmod(lock_path, 0o600)
+        except OSError:
+            pass
+        try:
+            _lock_exclusive_nb(self._lock_file)
         except OSError as exc:
             self._lock_file.close()
             raise LogLocked(
@@ -110,12 +152,10 @@ class ChatLog:
                 "session": session,
             }
             path = self._today_path()
-            with open(path, "ab") as fh:
-                offset = fh.tell()
+            with _open_append(path) as fh:
+                offset = os.lseek(fh.fileno(), 0, os.SEEK_END)
                 fh.write((json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"))
                 fh.flush()
-                import os
-
                 os.fsync(fh.fileno())
             self._index.append((path, offset))
             return i
@@ -141,6 +181,6 @@ class ChatLog:
     def close(self) -> None:
         with self._lock:
             try:
-                fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
+                _unlock(self._lock_file)
             finally:
                 self._lock_file.close()
