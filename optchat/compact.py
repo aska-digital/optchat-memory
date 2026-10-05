@@ -285,7 +285,7 @@ class Compactor:
         self.tree = tree
         self.log = log
         self.view = view
-        self.summarize = summarize or default_summarize
+        self.summarize = summarize or default_summarizer
         self.system = system or compact_prompt()
         self.node_bytes = node_bytes
         self._stop = threading.Event()
