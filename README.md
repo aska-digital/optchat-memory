@@ -1,4 +1,4 @@
-# optchat-memory
+# optchat
 
 OptChat-style endless memory for [Hermes Agent](https://github.com/NousResearch/hermes-agent):
 an append-only verbatim log plus a binary summary tree, exposed as *recall*
@@ -32,7 +32,7 @@ can and cannot take from the OptChat spec).
 Via the Hermes plugin catalog:
 
 ```
-hermes plugins install optchat-memory
+hermes plugins install optchat
 ```
 
 or drop this package directory into `$HERMES_HOME/plugins/optchat/`.
@@ -77,4 +77,4 @@ tests/          pytest suite (stubbed summarizer; ABC wired against a real check
 
 ## License
 
-Apache-2.0
+MIT
