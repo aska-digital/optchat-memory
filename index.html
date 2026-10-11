@@ -315,8 +315,30 @@
     .source-list a:hover { color: var(--mint-bright); }
     .source-list span { color: var(--code-muted); font: 10px "IBM Plex Mono", monospace; }
 
-    footer { display: flex; justify-content: space-between; gap: 20px; padding: 34px 0 52px; color: var(--muted); font-size: 13px; }
-    footer a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line-strong); }
+    footer { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 34px 0 52px; color: var(--muted); font-size: 13px; }
+    footer a { color: var(--ink); text-decoration: none; }
+    .footer-meta { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+    .footer-meta a, .aska-signature { border-bottom: 1px solid var(--line-strong); }
+    .footer-meta a:hover, .aska-signature:hover { border-color: var(--mint); }
+    .aska-links { display: flex; align-items: center; justify-content: flex-end; gap: 16px; }
+    .aska-signature { white-space: nowrap; color: var(--muted); }
+    .aska-signature strong { color: var(--ink); font-weight: 700; }
+    .aska-return {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 0 14px;
+      border: 1px solid var(--ink);
+      border-radius: 7px;
+      background: var(--ink);
+      color: var(--paper);
+      font-weight: 700;
+      white-space: nowrap;
+      transition: background .2s, border-color .2s, color .2s, transform .2s;
+    }
+    .aska-return:hover { transform: translateY(-2px); border-color: var(--mint); background: var(--mint); color: var(--paper); }
+    .aska-return svg { width: 15px; height: 15px; }
 
     @keyframes pulse { 60%,100% { box-shadow: 0 0 0 10px rgba(47,215,169,0); } }
     @keyframes breathe { from { transform: scaleX(.58); } to { transform: scaleX(1); } }
@@ -353,7 +375,9 @@
       .step { padding: 25px; }
       .principle { grid-template-columns: 58px 1fr; }
       .console-main, .console-side { padding: 24px 20px; }
-      footer { flex-direction: column; }
+      footer { align-items: flex-start; }
+      .footer-meta, .aska-links { width: 100%; flex-direction: column; align-items: flex-start; }
+      .aska-links { gap: 14px; }
     }
   </style>
 </head>
@@ -503,8 +527,17 @@
     </main>
 
     <footer>
-      <span>OptChat Memory · MIT licensed</span>
-      <span>Built for <a href="https://github.com/NousResearch/hermes-agent" target="_blank" rel="noreferrer">Hermes Agent</a></span>
+      <div class="footer-meta">
+        <span>OptChat Memory · MIT licensed</span>
+        <span>Built for <a href="https://github.com/NousResearch/hermes-agent" target="_blank" rel="noreferrer">Hermes Agent</a></span>
+      </div>
+      <div class="aska-links">
+        <a class="aska-signature" href="https://digital.askaconsult.com/">Built by <strong>ASKA Digital</strong></a>
+        <a class="aska-return" href="https://digital.askaconsult.com/" aria-label="Back to ASKA Digital">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h11"/></svg>
+          Back to ASKA
+        </a>
+      </div>
     </footer>
   </div>
 
