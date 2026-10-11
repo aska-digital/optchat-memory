@@ -7,25 +7,24 @@ through Hermes's `MemoryProvider` ABC. Based on Victor Taelin's
 
 ## Lineage
 
-OptChat grew out of [OptMem](https://github.com/VictorTaelin/OptMem) —
+OptChat grew out of [OptMem](https://github.com/VictorTaelin/OptMem):
 an append-only log of short notes plus a summary tree that an agent
-reads at the start of each session. OptChat turns that around: instead
-of a tool the agent calls, the memory *is* the chat, and the harness
+reads at the start of each session. OptChat makes the memory the chat itself, and the harness
 builds every turn from it. This plugin implements the OptChat memory
 substrate (the log plus the tree) as *recall* inside Hermes, without
-touching the core turn loop. See `DESIGN.md` for the honest scoping.
+touching the core turn loop.
 
 ## What it does
 
 - **Logs everything, forever.** Every turn's user messages, agent replies,
   subagent reports, tool calls and tool results are appended to
   `<hermes_home>/optchat/main/YYYY-MM-DD.jsonl` (one JSON object per line,
-  fsync'd; torn lines skipped at load). Nothing is ever edited or deleted.
+  fsync'd, torn lines skipped at load). Nothing is ever edited or deleted.
 - **Compresses in the background.** A compactor thread builds a binary tree
   of one-line summaries (`tree/YYYY-MM-DD.jsonl`): each message becomes a
   line, adjacent lines merge pairwise, up the tree. Short messages stay
-  verbatim; long ones are summarized with a cheap auxiliary model
-  (`call_llm(task="optchat_compact")` — pin a model under `auxiliary:` in
+  verbatim. Long ones are summarized with a cheap auxiliary model
+  (`call_llm(task="optchat_compact")`, pin a model under `auxiliary:` in
   config.yaml).
 - **Recalls through the view.** `prefetch()` returns a fixed-budget tiling
   of the whole log, oldest first: recent messages one line each, older
@@ -36,7 +35,7 @@ touching the core turn loop. See `DESIGN.md` for the honest scoping.
   `<hermes_home>/optchat/view.json` and reloaded at start, never rebuilt
   from the log.
 
-Recent turns stay in Hermes's native conversation context; the tree is
+Recent turns stay in Hermes's native conversation context. The tree is
 the deep past. See `DESIGN.md` for the honest scoping (what a plugin
 can and cannot take from the OptChat spec).
 
