@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -91,6 +92,10 @@ def _content_text(content: Any) -> str:
                 parts.append(part)
         return "".join(parts)
     return str(content)
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _cap_echo(text: str, cap: int = CAP_CHARS) -> str:
@@ -225,8 +230,9 @@ class OptChatMemoryProvider(MemoryProvider):
             state = self._homes[key]
         agent_context = kwargs.get("agent_context", "primary")
         with state.lock:
+            # None: start at the first synced turn's user message (see sync_turn).
             state.sessions[session_id or "default"] = {
-                "last_idx": len(state.log),
+                "last_idx": None,
                 "primary": agent_context == "primary",
             }
 
@@ -281,7 +287,12 @@ class OptChatMemoryProvider(MemoryProvider):
             if not sess.get("primary", True):
                 return  # cron/subagent/flush contexts don't write
             if messages:
-                entries = list(self._entries_from_messages(messages[sess["last_idx"]:]))
+                start = sess.get("last_idx")
+                # A new session has no cursor yet, and host compression can shrink the
+                # list below it. Either way, start at this turn's user message.
+                if start is None or start > len(messages):
+                    start = self._turn_start(messages, user_content)
+                entries = list(self._entries_from_messages(messages[start:]))
                 sess["last_idx"] = len(messages)
             else:
                 entries = []
@@ -293,6 +304,15 @@ class OptChatMemoryProvider(MemoryProvider):
                 state.log.append(kind, text, session=sid)
             if entries and state.compactor:
                 state.compactor.notify()
+
+    @staticmethod
+    def _turn_start(messages: List[Dict[str, Any]], user_content: str) -> int:
+        want = _norm(user_content or "")
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user":
+                if not want or _norm(_content_text(messages[i].get("content"))) == want:
+                    return i
+        return max(0, len(messages) - 2)
 
     @staticmethod
     def _entries_from_messages(messages: List[Dict[str, Any]]):
@@ -391,7 +411,8 @@ class OptChatMemoryProvider(MemoryProvider):
             return
         with state.lock:
             # A new conversation continues the same endless log; don't re-log history.
-            state.sessions[new_session_id] = {"last_idx": len(state.log), "primary": True}
+            # None: sync_turn starts at that turn's user message.
+            state.sessions[new_session_id] = {"last_idx": None, "primary": True}
 
     def on_pre_compress(self, messages: List[Dict[str, Any]]) -> str:
         # The tree already is the long-term store; nothing extra to distill here.

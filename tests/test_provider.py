@@ -122,15 +122,63 @@ def test_system_prompt_block_is_byte_stable(provider):
 
 def test_session_switch_does_not_relog_history(provider):
     p, _ = provider
-    msgs = [{"role": "user", "content": "hi"}]
-    p.sync_turn("hi", "", session_id="sess-1", messages=msgs)
-    assert len(p._state().log) == 1
+    msgs = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+    p.sync_turn("hi", "hello", session_id="sess-1", messages=msgs)
+    assert len(p._state().log) == 2
     p.on_session_switch("sess-2")
-    p.sync_turn("hi", "", session_id="sess-2", messages=msgs)
-    assert len(p._state().log) == 1  # history not re-logged into the new session
+    # The host carries earlier history into the new session; only this turn is new.
     p.sync_turn("hi2", "", session_id="sess-2",
                 messages=msgs + [{"role": "user", "content": "hi2"}])
-    assert len(p._state().log) == 2
+    texts = [m["text"] for m in p._state().log.iter_all()]
+    assert texts == ["hi", "hello", "hi2"]  # history not re-logged into the new session
+
+
+def test_new_session_logs_first_turn_when_log_is_longer(provider):
+    # Regression: the cursor was seeded with len(log), which skipped a new
+    # session's first turns whenever the log outgrew its message list.
+    p, _ = provider
+    for i in range(5):
+        p.sync_turn(f"q{i}", f"a{i}", session_id="sess-1")
+    assert len(p._state().log) == 10
+    p.on_session_switch("sess-2")
+    p.sync_turn("fresh start", "welcome", session_id="sess-2",
+                messages=[{"role": "user", "content": "fresh start"},
+                          {"role": "assistant", "content": "welcome"}])
+    texts = [m["text"] for m in p._state().log.iter_all()]
+    assert texts[-2:] == ["fresh start", "welcome"]
+    assert len(texts) == 12
+
+
+def test_new_session_after_initialize_logs_first_turn(provider):
+    p, home = provider
+    for i in range(3):
+        p.sync_turn(f"q{i}", f"a{i}", session_id="sess-1")
+    p.initialize("sess-3", hermes_home=home, platform="cli", agent_context="primary")
+    p.sync_turn("first", "reply", session_id="sess-3",
+                messages=[{"role": "system", "content": "sys"},
+                          {"role": "user", "content": "first"},
+                          {"role": "assistant", "content": "reply"}])
+    texts = [m["text"] for m in p._state().log.iter_all()]
+    assert texts[-2:] == ["first", "reply"]
+    assert len(texts) == 8
+
+
+def test_compressed_shorter_message_list_does_not_drop_turn(provider):
+    p, _ = provider
+    msgs = []
+    for i in range(4):
+        msgs = msgs + [{"role": "user", "content": f"q{i}"},
+                       {"role": "assistant", "content": f"a{i}"}]
+        p.sync_turn(f"q{i}", f"a{i}", session_id="sess-1", messages=msgs)
+    assert len(p._state().log) == 8
+    # Host compression: the list shrinks below the cursor (8) in the same session.
+    compressed = [{"role": "user", "content": "[summary of earlier turns]"},
+                  {"role": "user", "content": "q4"},
+                  {"role": "assistant", "content": "a4"}]
+    p.sync_turn("q4", "a4", session_id="sess-1", messages=compressed)
+    texts = [m["text"] for m in p._state().log.iter_all()]
+    assert texts[-2:] == ["q4", "a4"]
+    assert len(texts) == 10  # the summary is not logged as a user message
 
 
 def test_config_roundtrip_and_validation(provider):
