@@ -9,7 +9,7 @@ into ``$HERMES_HOME/plugins/optchat/``. Activate with
 from .provider import OptChatMemoryProvider, PROVIDER_NAME
 
 __all__ = ["OptChatMemoryProvider", "PROVIDER_NAME", "register"]
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 
 def register(ctx) -> None:

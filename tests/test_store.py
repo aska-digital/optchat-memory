@@ -113,3 +113,39 @@ def test_log_and_lock_files_are_owner_only(tmp_path):
         assert stat.S_IMODE(os.stat(lock_file).st_mode) == 0o600
     finally:
         log.close()
+
+
+def test_work_kind_accepted(tmp_path):
+    # Spec (Oct 8 revision): subagent reports log as the `work` kind.
+    log = ChatLog(tmp_path / "home" / "optchat")
+    try:
+        i = log.append("work", "[cayde] scan done")
+        assert log.read(i)["kind"] == "work"
+    finally:
+        log.close()
+
+
+def test_torn_middle_line_keeps_ids_aligned(tmp_path):
+    # A torn line in the middle leaves a gap: later ids stay aligned and
+    # read() on the gap raises IndexError, never TypeError.
+    root = tmp_path / "home" / "optchat"
+    (root / "main").mkdir(parents=True)
+    day = root / "main" / "2026-10-10.jsonl"
+    lines = []
+    for i in (0, 2):
+        lines.append(json.dumps({"i": i, "kind": "user", "text": f"m{i}",
+                                 "size": 1, "date": "2026-10-10T00:00:00"}) + "\n")
+    day.write_text(lines[0] + '{"i": 1, BROKEN\n' + lines[1], encoding="utf-8")
+    log = ChatLog(root)
+    try:
+        assert len(log) == 3
+        assert log.read(0)["text"] == "m0"
+        assert log.read(2)["text"] == "m2"
+        with pytest.raises(IndexError):
+            log.read(1)
+        # The next append does not collide with the gap.
+        assert log.append("user", "m3") == 3
+        # iter_all skips the gap instead of blowing up.
+        assert [m["text"] for m in log.iter_all()] == ["m0", "m2", "m3"]
+    finally:
+        log.close()

@@ -27,18 +27,18 @@ do that, and must not try:
   `agent/turn_*.py` is off-limits.
 
 So this provider implements the OptChat **memory substrate** — the part
-of the lineage that predates it as OptMem (which the spec itself
-describes as "an append-only log of short notes plus a summary tree,
+of the lineage that predates it as [OptMem](https://github.com/VictorTaelin/OptMem)
+(which the spec itself describes as "an append-only log of short notes plus a summary tree,
 which an agent reads at the start of each session"). Concretely:
 
 | OptChat spec | Here |
 |---|---|
-| Log: every message verbatim, append-only | `store.py`: per-day JSONL under `<home>/optchat/main/`, fsync per line, single-writer fcntl lock, torn lines skipped |
+| Log: every message verbatim, append-only | `store.py`: per-day JSONL under `<home>/optchat/main/`, fsync per line, single-writer fcntl lock, torn lines skipped. Kinds: `user` / `talk` / `tool` / `echo` / `work` / `note`. The `work` kind (subagent reports) is new in the Oct 8 spec revision |
 | Tree: binary summaries, `id+n` addressing, free nodes | `tree.py`: same addressing; free-node rule for level 0 *and* merges |
-| Compactor: in-order pump, context-aware summaries, SCALE + retry | `compact.py`: same pump rules; `call_llm(task="optchat_compact")` so the model is user-pinned; sequential (one node at a time) — turns never wait on it here, so the spec's JOBS-way parallelism is deferred |
-| View: fold + most-due-pair fit, summaries only, never cut text | `view.py`: same fold/fit; unbuilt parts render `(not summarized yet: zoom it)` |
+| Compactor: in-order pump, context-aware summaries, SCALE + retry | `compact.py`: same pump rules; `call_llm(task="optchat_compact")` so the model is user-pinned; sequential (one node at a time) — turns never wait on it here, so the spec's JOBS-way parallelism is deferred; compaction context stops at the first unbuilt line (spec §4) |
+| View: fold + most-due-pair fit, summaries only, never cut text | `view.py`: same fold/fit. The due rule measures from the pair's LAST message, `due = (T - last) / 2^l`. The Oct 8 spec revision calls the first-message form (which this code used) wrong, so this was fixed. Unbuilt parts render `(not summarized yet: zoom it)`. The view is saved to `view.json` and loaded at start, never rebuilt from the log (spec §3.2) |
 | Turn loop: fresh call per message with the view | **Not taken.** `prefetch()` returns the view as per-turn `<memory-context>` recall instead; recent turns stay in native context |
-| `zoom` / `date` tools | `optchat_zoom` / `optchat_date` via `get_tool_schemas` / `handle_tool_call` |
+| `zoom` / `date` tools | `optchat_zoom` / `optchat_date` via `get_tool_schemas` / `handle_tool_call`. `zoom(id, 1)` pages long messages (spec §6) |
 | System prompt: MASTER + VIEW_DOC | `system_prompt_block()` returns a byte-stable VIEW_DOC only; Hermes owns the rest |
 
 What the agent loses vs full OptChat: instructions "sticking" without
@@ -55,6 +55,9 @@ without touching the core loop or the cache invariant.
   resolved per call; `initialize()` never caches a home as "the" home.
 - Background work starts via `spawn_context_thread` (contextvars are
   copied; an unbound worker would silently land on the wrong profile).
+- The compactor shares the `View` with turn threads: every `View` method
+  serializes on an internal lock (lock order view → tree/log), so a
+  background refit can never tear a turn's render.
 - `sync_turn` skips writes for non-primary `agent_context`
   (cron / subagent / flush).
 - The log takes a non-blocking exclusive lock at open: a second process
@@ -68,6 +71,9 @@ without touching the core loop or the cache invariant.
   rest. Prefetch never blocks on compaction.
 - `prefetch` is fast by construction: it renders the cached view
   (refreshed incrementally), never calls the model.
+- The view is persisted to `<home>/optchat/view.json` (owner-only) after
+  every refit and reloaded at start. A corrupt file falls back to a clean
+  refold, so a restart never loses the live tiling.
 - Summarizer failures raise inside `build_node` and are caught by the
   compactor loop (warn + 10s backoff), never by a turn.
 

@@ -6,7 +6,8 @@ Layout: ``<root>/main/YYYY-MM-DD.jsonl`` — one JSON object per line::
 
 ``i`` is the message's permanent global id. ``kind`` is one of ``user``
 (the user's words), ``talk`` (the agent's replies), ``tool`` (tool calls:
-name + JSON input), ``echo`` (tool results), ``note`` (imported history).
+name + JSON input), ``echo`` (tool results), ``work`` (a subagent's report),
+``note`` (imported history).
 
 Durability: each line is written with one ``write()`` + ``fsync()`` before
 the call returns. Single writer per root: a non-blocking file lock on
@@ -32,7 +33,7 @@ from typing import Iterator, Optional
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("user", "talk", "tool", "echo", "note")
+KINDS = ("user", "talk", "tool", "echo", "work", "note")
 
 
 if os.name == "nt":  # Windows has no fcntl; lock one byte with msvcrt instead.
@@ -166,9 +167,16 @@ class ChatLog:
         return len(self._index)
 
     def read(self, i: int) -> dict:
-        """Read message ``i`` whole (raises IndexError when absent)."""
+        """Read message ``i`` whole.
+
+        Raises IndexError when absent — including ids lost to a torn write
+        (the index keeps a gap so later ids stay aligned; callers must not
+        see a TypeError from unpacking the gap).
+        """
         with self._lock:
-            entry = self._index[i]
+            entry = self._index[i] if 0 <= i < len(self._index) else None
+        if entry is None:
+            raise IndexError(f"optchat: message {i} not in log")
         path, offset = entry
         with open(path, "rb") as fh:
             fh.seek(offset)
@@ -176,7 +184,10 @@ class ChatLog:
 
     def iter_all(self) -> Iterator[dict]:
         for i in range(len(self)):
-            yield self.read(i)
+            try:
+                yield self.read(i)
+            except IndexError:
+                continue  # id lost to a torn write; ids after it stay aligned
 
     def close(self) -> None:
         with self._lock:

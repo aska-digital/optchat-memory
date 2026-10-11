@@ -15,7 +15,7 @@ an append-only verbatim log plus a binary summary tree, surfaced as
 *recall* through the MemoryProvider ABC:
 
 - ``sync_turn`` appends each turn's messages to the log (kinds ``user`` /
-  ``talk`` / ``tool`` / ``echo``, tool results capped at ``CAP`` chars).
+  ``talk`` / ``tool`` / ``echo`` / ``work``, tool results capped at ``CAP`` chars).
 - A background compactor (``compact.py``) builds the tree in order with
   a cheap auxiliary model (``call_llm(task="optchat_compact")`` — pin a
   model under ``auxiliary:`` in config.yaml).
@@ -67,9 +67,9 @@ DEFAULT_CONFIG = {
 
 VIEW_DOC = """The <memory-context> block below holds this agent's long-term memory: the whole conversation history, oldest first, as one-line summaries. Each line is
   id+n|text   the n messages from id on, summarized (newlines shown as spaces)
-A summary tags each item with its kind: user (the user's words), talk (the agent's replies), tool (tool calls), echo (their results), note (imported history). A short message is its own line, word for word. Recent lines cover one message each; the older the messages, the more a line covers.
+A summary tags each item with its kind: user (the user's words), talk (the agent's replies), tool (tool calls), echo (their results), work (a subagent's report), note (imported history). A short message is its own line, word for word. Recent lines cover one message each; the older the messages, the more a line covers.
 A message not summarized yet shows as "(not summarized yet: zoom it)". No message appears in full, not even the last ones.
-Navigating: optchat_zoom(id, n) opens line id+n into the two lines of n/2 messages it was made from; optchat_zoom(id, 1) gives message id in full. Zoom whenever a summary only mentions something you need, such as what your last reply said, a decision, a past attempt or where a file is, before you act, guess or ask. optchat_date(id) gives the date and time of message id."""
+Navigating: optchat_zoom(id, n) opens line id+n into the two lines of n/2 messages it was made from; optchat_zoom(id, 1) gives message id in full (long messages come in pages — pass page=2, 3, ... for the rest). Zoom whenever a summary only mentions something you need, such as what your last reply said, a decision, a past attempt or where a file is, before you act, guess or ask. optchat_date(id) gives the date and time of message id."""
 
 
 def _content_text(content: Any) -> str:
@@ -83,6 +83,8 @@ def _content_text(content: Any) -> str:
             if isinstance(part, dict):
                 if part.get("type") == "text":
                     parts.append(str(part.get("text", "")))
+                elif part.get("type") in ("image", "image_url"):
+                    parts.append("[image]")
                 elif "text" in part:
                     parts.append(str(part["text"]))
             elif isinstance(part, str):
@@ -109,9 +111,23 @@ class _HomeState:
         self.lock = threading.RLock()
         self.log = ChatLog(self.root)
         self.tree = SummaryTree(self.root)
-        self.view = View(self.tree, budget_chars=int(config["view_budget_chars"]))
+        # Spec 3.2: the view is saved to view.json and loaded at start —
+        # never rebuilt from the log (the rebuilt view differs from the live
+        # one). A missing/corrupt view.json falls back to a clean refold.
+        self.view_path = self.root / "view.json"
+        loaded = View.load(
+            self.tree,
+            budget_chars=int(config["view_budget_chars"]),
+            path=self.view_path,
+            total=len(self.log),
+        )
+        self.view = loaded if loaded is not None else View(
+            self.tree, budget_chars=int(config["view_budget_chars"])
+        )
         with self.lock:
             self.view.fold_to(len(self.log))
+            self.view.refit()
+        self.view.save(self.view_path)
         self.compactor: Optional[Compactor] = None
         # (session_id) -> {"last_idx": int, "primary": bool}
         self.sessions: Dict[str, Dict[str, Any]] = {}
@@ -121,7 +137,9 @@ class _HomeState:
         if not self.config.get("compact_enabled", True):
             return
         self.compactor = Compactor(
-            self.tree, self.log, self.view, node_bytes=int(self.config["node_bytes"])
+            self.tree, self.log, self.view,
+            node_bytes=int(self.config["node_bytes"]),
+            view_path=self.view_path,
         )
         self.compactor.start()
 
@@ -227,6 +245,7 @@ class OptChatMemoryProvider(MemoryProvider):
                 return ""
             body = state.view.render()
             self._last_prefetch_lines = body.count("\n")
+            state.view.save(state.view_path)
         header = (
             f"[optchat memory: {len(state.log)} messages remembered; "
             "older lines are coarser summaries — zoom before acting on one]"
@@ -296,6 +315,11 @@ class OptChatMemoryProvider(MemoryProvider):
                 text = _content_text(m.get("content"))
                 if text.strip():
                     yield ("echo", _cap_echo(text))
+            elif role == "work":
+                # Subagent reports (spec section 1: the `work` kind).
+                text = _content_text(m.get("content"))
+                if text.strip():
+                    yield ("work", text)
             # "system" rows are the harness's, not the chat: never logged.
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
@@ -311,6 +335,7 @@ class OptChatMemoryProvider(MemoryProvider):
                     "properties": {
                         "id": {"type": "integer", "description": "First message id of the line."},
                         "n": {"type": "integer", "description": "How many messages the line covers (power of 2)."},
+                        "page": {"type": "integer", "description": "Page of a long message (n=1 only); 1-based."},
                     },
                     "required": ["id", "n"],
                 },
@@ -337,9 +362,10 @@ class OptChatMemoryProvider(MemoryProvider):
                 try:
                     msg_id = int(args["id"])
                     n = int(args["n"])
+                    page = int(args.get("page", 1))
                 except (KeyError, TypeError, ValueError):
                     return json.dumps({"error": "optchat_zoom needs integer id and n"})
-                return json.dumps({"result": state.tree.zoom(state.log, msg_id, n, len(state.log))})
+                return json.dumps({"result": state.tree.zoom(state.log, msg_id, n, len(state.log), page=page)})
             if tool_name == "optchat_date":
                 try:
                     msg_id = int(args["id"])

@@ -18,9 +18,14 @@ if HERMES_CHECKOUT.is_dir():
 
 try:
     from optchat.provider import OptChatMemoryProvider, VIEW_DOC  # noqa: E402
+    from agent import memory_provider as _memory_provider_module  # noqa: E402
     from agent.memory_provider import MemoryProvider  # noqa: E402
 except ImportError:
     pytest.skip("hermes-agent checkout not available", allow_module_level=True)
+
+if getattr(_memory_provider_module, "__test_stub__", False):
+    pytest.skip("hermes-agent checkout not available (test stub active)",
+                allow_module_level=True)
 
 
 @pytest.fixture

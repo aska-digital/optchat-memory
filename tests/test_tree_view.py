@@ -207,3 +207,133 @@ def test_tree_day_file_is_owner_only(tmp_path):
     day_file = next((root / "tree").glob("*.jsonl"))
     assert stat.S_IMODE(os.stat(day_file).st_mode) == 0o600
     assert tree.get(0, 0) == "one line"  # content still lands and reads back
+
+
+def test_due_measures_from_pair_last_message(tmp_path):
+    # Spec 3.2 (Oct 8 revision): due = (T - last) / 2^l, last = the pair's
+    # last message. The old first-message form merged the wrong pair here.
+    from optchat.view import Part  # noqa: E402
+
+    root = tmp_path / "optchat"
+    tree = SummaryTree(root)
+    for l, i in [(2, 0), (2, 1), (3, 0), (0, 8), (0, 9), (1, 4)]:
+        tree.set(l, i, "x" * 100)
+    view = View(tree, budget_chars=10**9)
+    # T=10, view exactly as the spec's example: 0+4, 4+4, 8+1, 9+1.
+    view.parts = [Part(2, 0), Part(2, 1), Part(0, 8), Part(0, 9)]
+    view.folded = 10
+    view.budget = 350  # one merge of ~100 bytes fits under budget
+    view.refit()
+    # Newest pair (8+1, 9+1) is most due -> merges into 8+2. The old
+    # (T - first) rule merged (0+4, 4+4) instead.
+    assert [(p.l, p.i) for p in view.parts] == [(2, 0), (2, 1), (1, 4)]
+
+
+def test_view_save_load_roundtrip(tmp_path):
+    root = tmp_path / "optchat"
+    log = make_log(tmp_path, 8)
+    tree = SummaryTree(root)
+    view = View(tree, budget_chars=2000)
+    view.fold_to(len(log))
+    while pump_once(tree, log, view, stub_summarizer, compact_prompt()):
+        pass
+    path = root / "view.json"
+    view.save(path)
+    assert path.exists()
+    import stat as _stat  # noqa: E402
+    assert _stat.S_IMODE(os.stat(path).st_mode) == 0o600
+
+    tree2 = SummaryTree(root)
+    loaded = View.load(tree2, 2000, path, len(log))
+    assert loaded is not None
+    assert loaded.folded == view.folded
+    assert [(p.l, p.i) for p in loaded.parts] == [(p.l, p.i) for p in view.parts]
+    assert loaded.render() == view.render()
+    log.close()
+
+
+def test_view_load_rejects_corrupt_or_stale(tmp_path):
+    root = tmp_path / "optchat"
+    tree = SummaryTree(root)
+    path = root / "view.json"
+    path.write_text("not json", encoding="utf-8")
+    assert View.load(tree, 2000, path, 0) is None
+    path.write_text('{"folded": 5, "parts": [[0, 0]]}', encoding="utf-8")
+    assert View.load(tree, 2000, path, 3) is None  # folded > total
+    path.write_text('{"folded": 2, "parts": [[0, 0], [0, 2]]}', encoding="utf-8")
+    assert View.load(tree, 2000, path, 2) is None  # parts don't tile [0, 2)
+    assert View.load(tree, 2000, root / "missing.json", 0) is None
+
+
+def test_zoom_pages_long_message(tmp_path):
+    log = ChatLog(tmp_path / "optchat")
+    big = "0123456789" * 900  # 9000 chars
+    log.append("user", big)
+    tree = SummaryTree(tmp_path / "optchat")
+    page1 = tree.zoom(log, 0, 1, len(log))
+    assert page1.startswith("0+0|user: 0123456789")
+    assert "page 1 of 3" in page1
+    assert len(page1) < 9000
+    page2 = tree.zoom(log, 0, 1, len(log), page=2)
+    assert "page 2 of 3" in page2
+    page3 = tree.zoom(log, 0, 1, len(log), page=3)
+    assert "last page" in page3
+    # Reassembled pages equal the whole message ("user: " + text).
+    def body(p):
+        head, _, rest = p.partition("0+0|")
+        return rest.split("\n[page")[0]
+    assert body(page1) + body(page2) + body(page3) == "user: " + big
+    assert tree.zoom(log, 0, 1, len(log), page=4).startswith("No line")
+    assert tree.zoom(log, 0, 1, len(log), page=0).startswith("No line")
+    # Short messages still come back whole with no trailer.
+    log.append("user", "short")
+    assert tree.zoom(log, 1, 1, len(log)) == "1+0|user: short"
+    log.close()
+
+
+def test_context_lines_stop_at_first_unbuilt(tmp_path):
+    # Spec 4: a compaction's view stops at the first unbuilt line.
+    log = make_log(tmp_path, 4)
+    tree = SummaryTree(tmp_path / "optchat")
+    tree.set(0, 0, "line zero")
+    view = View(tree, budget_chars=100_000)
+    view.fold_to(len(log))
+    lines = view.context_lines(10)
+    assert lines == ["line zero"]  # stops before the unbuilt 1+1 part
+    log.close()
+
+
+def test_view_survives_concurrent_refit_and_render(tmp_path):
+    # The compactor mutates the view while turns read it; the internal
+    # lock must keep every render well-formed.
+    import threading  # noqa: E402
+
+    log = make_log(tmp_path, 64, long=True)
+    tree = SummaryTree(tmp_path / "optchat")
+    view = View(tree, budget_chars=3000)
+    view.fold_to(len(log))
+    errors = []
+
+    def compactor():
+        try:
+            for _ in range(200):
+                if not pump_once(tree, log, view, stub_summarizer, compact_prompt()):
+                    break
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def reader():
+        try:
+            for _ in range(500):
+                r = view.render()
+                assert r.startswith("<chat>") and r.endswith("</chat>")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    ts = [threading.Thread(target=compactor)] + [threading.Thread(target=reader) for _ in range(3)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert not errors
+    log.close()

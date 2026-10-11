@@ -123,10 +123,14 @@ class SummaryTree:
         """True when the source fits in the node budget — no model call needed."""
         return len(source_text.encode("utf-8")) <= node_bytes
 
-    # -- zoom (spec section 7.1) -------------------------------------------
+    # -- zoom (spec section 6, tools) ------------------------------------------
 
-    def zoom(self, log, msg_id: int, n: int, total: int) -> str:
-        """Open line ``id+n`` into its two children; ``n == 1`` gives the message whole."""
+    # A long message comes in pages (spec section 6): zoom(id, 1) returns one
+    # page at a time so a single huge message can't flood the context.
+    ZOOM_PAGE_CHARS = 4000
+
+    def zoom(self, log, msg_id: int, n: int, total: int, page: int = 1) -> str:
+        """Open line ``id+n`` into its two children; ``n == 1`` gives the message whole, in pages."""
         if n < 1 or (n & (n - 1)) != 0:
             return "No line %d+%d." % (msg_id, n)
         if msg_id % n != 0 or msg_id + n > total:
@@ -136,7 +140,17 @@ class SummaryTree:
                 m = log.read(msg_id)
             except IndexError:
                 return "No line %d+%d." % (msg_id, n)
-            return f"{msg_id}+0|{m['kind']}: {m['text']}"
+            text = f"{m['kind']}: {m['text']}"
+            pages = max(1, -(-len(text) // self.ZOOM_PAGE_CHARS))  # ceil
+            if page < 1 or page > pages:
+                return "No line %d+%d." % (msg_id, n)
+            start = (page - 1) * self.ZOOM_PAGE_CHARS
+            chunk = text[start : start + self.ZOOM_PAGE_CHARS]
+            # Newlines kept: only the whole-message case keeps them, per the spec.
+            out = f"{msg_id}+0|{chunk}"
+            if pages > 1:
+                out += f"\n[page {page} of {pages} — zoom({msg_id}, 1, page={page + 1}) for the next]" if page < pages else f"\n[page {page} of {pages} — last page]"
+            return out
         l = n.bit_length() - 1
         i = msg_id // n
         (al, ai), (bl, bi) = self.children(l, i)

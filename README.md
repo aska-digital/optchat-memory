@@ -5,10 +5,20 @@ an append-only verbatim log plus a binary summary tree, exposed as *recall*
 through Hermes's `MemoryProvider` ABC. Based on Victor Taelin's
 [OptChat spec](https://gist.github.com/VictorTaelin/91837951a5ce5b38f341ec1ba1df6449).
 
+## Lineage
+
+OptChat grew out of [OptMem](https://github.com/VictorTaelin/OptMem) —
+an append-only log of short notes plus a summary tree that an agent
+reads at the start of each session. OptChat turns that around: instead
+of a tool the agent calls, the memory *is* the chat, and the harness
+builds every turn from it. This plugin implements the OptChat memory
+substrate (the log plus the tree) as *recall* inside Hermes, without
+touching the core turn loop. See `DESIGN.md` for the honest scoping.
+
 ## What it does
 
 - **Logs everything, forever.** Every turn's user messages, agent replies,
-  tool calls and tool results are appended to
+  subagent reports, tool calls and tool results are appended to
   `<hermes_home>/optchat/main/YYYY-MM-DD.jsonl` (one JSON object per line,
   fsync'd; torn lines skipped at load). Nothing is ever edited or deleted.
 - **Compresses in the background.** A compactor thread builds a binary tree
@@ -20,8 +30,11 @@ through Hermes's `MemoryProvider` ABC. Based on Victor Taelin's
 - **Recalls through the view.** `prefetch()` returns a fixed-budget tiling
   of the whole log, oldest first: recent messages one line each, older
   ones coarser with age. The agent gets two tools to navigate it:
-  `optchat_zoom(id, n)` opens any line down to the verbatim message,
-  `optchat_date(id)` gives a message's timestamp.
+  `optchat_zoom(id, n)` opens any line down to the verbatim message
+  (long messages come in pages: `optchat_zoom(id, 1, page=2)`),
+  `optchat_date(id)` gives a message's timestamp. The view is saved to
+  `<hermes_home>/optchat/view.json` and reloaded at start, never rebuilt
+  from the log.
 
 Recent turns stay in Hermes's native conversation context; the tree is
 the deep past. See `DESIGN.md` for the honest scoping (what a plugin
