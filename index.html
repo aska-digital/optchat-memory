@@ -104,7 +104,7 @@
         radial-gradient(circle at 5% 60%, rgba(22,127,145,.09), transparent 26rem),
         linear-gradient(to bottom, transparent 0, var(--paper) 92%);
     }
-    .shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+    .shell { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
     .topline {
       display: flex;
       align-items: center;
@@ -315,15 +315,37 @@
     .source-list a:hover { color: var(--mint-bright); }
     .source-list span { color: var(--code-muted); font: 10px "IBM Plex Mono", monospace; }
 
-    footer { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 34px 0 52px; color: var(--muted); font-size: 13px; }
+    footer { padding: 34px 0 52px; color: var(--muted); font-size: 13px; }
     footer a { color: var(--ink); text-decoration: none; }
     .footer-meta { display: flex; flex-wrap: wrap; gap: 8px 22px; }
-    .footer-meta a, .aska-signature { border-bottom: 1px solid var(--line-strong); }
-    .footer-meta a:hover, .aska-signature:hover { border-color: var(--mint); }
-    .aska-links { display: flex; align-items: center; justify-content: flex-end; gap: 16px; }
-    .aska-signature { white-space: nowrap; color: var(--muted); }
-    .aska-signature strong { color: var(--ink); font-weight: 700; }
+    .footer-meta a { border-bottom: 1px solid var(--line-strong); }
+    .footer-meta a:hover { border-color: var(--mint); }
+    .aska-signature,
     .aska-return {
+      position: fixed;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      z-index: 2000;
+      backdrop-filter: blur(14px);
+      box-shadow: 0 8px 28px rgba(25, 59, 48, .16);
+    }
+    .aska-signature {
+      right: max(18px, env(safe-area-inset-right));
+      margin: 0;
+      padding: 9px 13px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: var(--paper-soft);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.25;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: border-color .2s, color .2s, transform .2s;
+    }
+    .aska-signature strong { color: var(--ink); font-weight: 700; }
+    .aska-signature:hover { transform: translateY(-2px); border-color: var(--mint); color: var(--ink); }
+    .aska-return {
+      left: max(18px, env(safe-area-inset-left));
       display: inline-flex;
       align-items: center;
       gap: 8px;
@@ -334,6 +356,8 @@
       background: var(--ink);
       color: var(--paper);
       font-weight: 700;
+      font-size: 13px;
+      text-decoration: none;
       white-space: nowrap;
       transition: background .2s, border-color .2s, color .2s, transform .2s;
     }
@@ -359,7 +383,7 @@
       .console-main { border-right: 0; border-bottom: 1px solid rgba(220,255,244,.13); }
     }
     @media (max-width: 560px) {
-      .shell { width: min(100% - 24px, 1180px); }
+      .shell { width: min(100% - 24px, 1120px); }
       .topline { align-items: flex-start; padding: 16px 0; }
       .topline > span:last-child { text-align: right; }
       .hero { padding-top: 52px; }
@@ -375,9 +399,24 @@
       .step { padding: 25px; }
       .principle { grid-template-columns: 58px 1fr; }
       .console-main, .console-side { padding: 24px 20px; }
-      footer { align-items: flex-start; }
-      .footer-meta, .aska-links { width: 100%; flex-direction: column; align-items: flex-start; }
-      .aska-links { gap: 14px; }
+      footer { padding-bottom: 78px; }
+      .footer-meta { width: 100%; flex-direction: column; align-items: flex-start; }
+      .aska-return {
+        left: max(12px, env(safe-area-inset-left));
+        bottom: max(12px, env(safe-area-inset-bottom));
+        min-height: 38px;
+        padding: 0 12px;
+        font-size: 12px;
+      }
+      .aska-signature {
+        right: max(12px, env(safe-area-inset-right));
+        bottom: max(12px, env(safe-area-inset-bottom));
+        padding: 8px 10px;
+        font-size: 11px;
+      }
+    }
+    @media (max-width: 310px) {
+      .aska-signature { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 48px); }
     }
   </style>
 </head>
@@ -531,15 +570,14 @@
         <span>OptChat Memory · MIT licensed</span>
         <span>Built for <a href="https://github.com/NousResearch/hermes-agent" target="_blank" rel="noreferrer">Hermes Agent</a></span>
       </div>
-      <div class="aska-links">
-        <a class="aska-signature" href="https://digital.askaconsult.com/">Built by <strong>ASKA Digital</strong></a>
-        <a class="aska-return" href="https://digital.askaconsult.com/" aria-label="Back to ASKA Digital">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h11"/></svg>
-          Back to ASKA
-        </a>
-      </div>
     </footer>
   </div>
+
+  <a class="aska-return" href="https://digital.askaconsult.com/" aria-label="Back to ASKA Digital">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h11"/></svg>
+    Back to ASKA
+  </a>
+  <a class="aska-signature" href="https://digital.askaconsult.com/">Built by <strong>ASKA Digital</strong></a>
 
   <script>
     (function () {
