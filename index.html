@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <title>OptChat Memory for Hermes Agent</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --paper: #f6f8f4;
+      --paper-soft: rgba(246, 248, 244, .78);
+      --ink: #10201b;
+      --muted: #52615c;
+      --line: rgba(16, 32, 27, .15);
+      --line-strong: rgba(16, 32, 27, .27);
+      --panel: rgba(255,255,255,.76);
+      --panel-solid: #ffffff;
+      --mint: #00a981;
+      --mint-bright: #16c99d;
+      --aqua: #167f91;
+      --coral: #ff6f57;
+      --shadow: 0 24px 70px rgba(25, 59, 48, .12);
+      --code: #0c1815;
+      --code-ink: #dcfff4;
+      --code-muted: #8ca89f;
+      --selection: rgba(0,169,129,.18);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #07100e;
+        --paper-soft: rgba(7, 16, 14, .74);
+        --ink: #e8f4ef;
+        --muted: #9db0a9;
+        --line: rgba(214, 239, 231, .14);
+        --line-strong: rgba(214, 239, 231, .27);
+        --panel: rgba(13, 28, 24, .76);
+        --panel-solid: #0d1c18;
+        --mint: #2fd7a9;
+        --mint-bright: #6cf5cf;
+        --aqua: #51bfd0;
+        --coral: #ff816b;
+        --shadow: 0 28px 80px rgba(0,0,0,.34);
+        --code: #030806;
+        --code-ink: #dcfff4;
+        --code-muted: #8ca89f;
+        --selection: rgba(47,215,169,.18);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 280px;
+      overflow-x: hidden;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "DM Sans", system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+    }
+    ::selection { background: var(--selection); }
+    button, input { font: inherit; }
+    a { color: inherit; }
+    code, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+    canvas#synapses {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -2;
+      opacity: .62;
+      pointer-events: none;
+    }
+    .ambient {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 82% 12%, rgba(0,169,129,.14), transparent 31rem),
+        radial-gradient(circle at 5% 60%, rgba(22,127,145,.09), transparent 26rem),
+        linear-gradient(to bottom, transparent 0, var(--paper) 92%);
+    }
+    .shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+    .topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 22px 0;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 12px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--line);
+    }
+    .release { display: flex; align-items: center; gap: 9px; }
+    .pulse {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--mint);
+      box-shadow: 0 0 0 0 rgba(47,215,169,.45);
+      animation: pulse 2.4s ease-out infinite;
+    }
+    .toplink { text-decoration: none; border-bottom: 1px solid var(--line-strong); }
+    .toplink:hover { border-color: var(--mint); }
+
+    .hero {
+      min-height: 780px;
+      display: grid;
+      grid-template-columns: minmax(0, .92fr) minmax(460px, 1.08fr);
+      gap: 64px;
+      align-items: center;
+      padding: 76px 0 96px;
+    }
+    .eyebrow {
+      margin: 0 0 20px;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      color: var(--mint);
+      font-size: 13px;
+    }
+    h1 {
+      max-width: 680px;
+      margin: 0;
+      font-size: clamp(52px, 7vw, 92px);
+      line-height: .94;
+      letter-spacing: -.065em;
+      font-weight: 700;
+    }
+    .hero-copy > p:not(.eyebrow) {
+      max-width: 590px;
+      margin: 30px 0 0;
+      color: var(--muted);
+      font-size: clamp(18px, 2vw, 22px);
+      line-height: 1.48;
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      min-height: 48px;
+      padding: 0 19px;
+      border: 1px solid var(--line-strong);
+      background: var(--panel);
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 600;
+      border-radius: 8px;
+      backdrop-filter: blur(14px);
+      transition: background .2s, border-color .2s, transform .2s;
+    }
+    .button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+    .button:hover { transform: translateY(-2px); border-color: var(--mint); }
+    .button svg { width: 17px; height: 17px; }
+
+    .memory-window {
+      position: relative;
+      min-height: 560px;
+      border: 1px solid var(--line-strong);
+      background: var(--paper-soft);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      overflow: hidden;
+      border-radius: 18px 5px 18px 5px;
+    }
+    .memory-window::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(110deg, transparent 60%, rgba(0,169,129,.07));
+    }
+    .window-bar {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 15px 17px;
+      border-bottom: 1px solid var(--line);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .window-dots { display: flex; gap: 6px; }
+    .window-dots i { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); }
+    .window-dots i:first-child { background: var(--coral); }
+    .window-dots i:last-child { background: var(--mint); }
+    .viz { position: relative; z-index: 1; height: 314px; border-bottom: 1px solid var(--line); }
+    #tree { width: 100%; height: 100%; display: block; }
+    .memory-readout {
+      position: relative;
+      z-index: 2;
+      padding: 16px 17px 18px;
+    }
+    .readout-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 11px; }
+    .readout-head strong { font-size: 14px; }
+    .readout-head span { font: 11px "IBM Plex Mono", monospace; color: var(--muted); }
+    .memory-lines { display: grid; gap: 7px; }
+    .memory-line {
+      display: grid;
+      grid-template-columns: 54px 1fr;
+      gap: 11px;
+      align-items: center;
+      padding: 8px 10px;
+      border: 0;
+      width: 100%;
+      text-align: left;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: background .18s, color .18s;
+    }
+    .memory-line:hover, .memory-line.active { background: var(--selection); color: var(--ink); }
+    .memory-line .id { font: 10px "IBM Plex Mono", monospace; color: var(--aqua); }
+    .memory-line .text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+    .window-controls { display: flex; gap: 10px; align-items: center; margin-top: 13px; }
+    .play {
+      width: 34px; height: 34px; flex: 0 0 34px; border: 1px solid var(--line-strong); border-radius: 50%;
+      background: var(--panel-solid); color: var(--ink); cursor: pointer; display: grid; place-items: center;
+    }
+    .play svg { width: 13px; height: 13px; fill: currentColor; }
+    input[type="range"] { width: 100%; accent-color: var(--mint); }
+    .zoom-note {
+      min-height: 39px;
+      padding: 10px 12px;
+      border-left: 2px solid var(--coral);
+      background: rgba(255,111,87,.08);
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 12px;
+    }
+
+    .section { padding: 110px 0; border-top: 1px solid var(--line); }
+    .section-head { display: grid; grid-template-columns: 180px 1fr; gap: 42px; margin-bottom: 58px; }
+    .section-no { font: 12px "IBM Plex Mono", monospace; color: var(--mint); }
+    h2 { margin: 0; font-size: clamp(34px, 5vw, 58px); line-height: 1.05; letter-spacing: -.045em; }
+    .section-intro { max-width: 700px; margin: 20px 0 0; color: var(--muted); font-size: 18px; }
+
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+    .step { position: relative; min-height: 370px; padding: 32px; background: var(--paper); overflow: hidden; }
+    .step-index { font: 12px "IBM Plex Mono", monospace; color: var(--aqua); }
+    .step h3 { margin: 80px 0 15px; font-size: 26px; letter-spacing: -.03em; }
+    .step p { margin: 0; color: var(--muted); }
+    .step-visual { position: absolute; top: 27px; right: 26px; width: 92px; height: 92px; opacity: .85; }
+    .log-stack span { display: block; height: 4px; background: var(--line-strong); margin: 8px 0; transform-origin: right; animation: breathe 3.5s ease-in-out infinite alternate; }
+    .log-stack span:nth-child(2) { width: 78%; margin-left: auto; animation-delay: -.8s; background: var(--mint); }
+    .log-stack span:nth-child(3) { width: 58%; margin-left: auto; animation-delay: -1.5s; }
+    .binary-visual i { position: absolute; width: 11px; height: 11px; border: 2px solid var(--mint); background: var(--paper); border-radius: 50%; }
+    .binary-visual i:nth-child(1) { left: 40px; top: 5px; }
+    .binary-visual i:nth-child(2) { left: 17px; top: 42px; }
+    .binary-visual i:nth-child(3) { right: 17px; top: 42px; }
+    .binary-visual i:nth-child(4) { left: 3px; bottom: 4px; }
+    .binary-visual i:nth-child(5) { left: 32px; bottom: 4px; }
+    .binary-visual i:nth-child(6) { right: 32px; bottom: 4px; }
+    .binary-visual i:nth-child(7) { right: 3px; bottom: 4px; }
+    .binary-visual::before, .binary-visual::after { content:""; position:absolute; inset: 16px 16px 24px; border: 1px solid var(--line-strong); transform: rotate(32deg); }
+    .binary-visual::after { transform: rotate(-32deg); }
+    .focus-visual { border: 1px solid var(--line-strong); padding: 13px; }
+    .focus-visual i { display:block; height: 5px; background: var(--line-strong); margin-bottom: 8px; }
+    .focus-visual i:nth-child(3), .focus-visual i:nth-child(4) { background: var(--mint); }
+    .focus-visual i:nth-child(4) { width: 73%; }
+
+    .proof-grid { display: grid; grid-template-columns: .85fr 1.15fr; gap: 66px; align-items: start; }
+    .big-number { font-size: clamp(72px, 12vw, 150px); line-height: .8; letter-spacing: -.08em; font-weight: 700; color: var(--mint); }
+    .big-number-label { margin-top: 20px; color: var(--muted); max-width: 310px; }
+    .principles { display: grid; gap: 0; }
+    .principle { display: grid; grid-template-columns: 80px 1fr; gap: 20px; padding: 25px 0; border-bottom: 1px solid var(--line); }
+    .principle:first-child { border-top: 1px solid var(--line); }
+    .principle code { color: var(--aqua); font-size: 12px; }
+    .principle h3 { margin: 0 0 7px; font-size: 20px; }
+    .principle p { margin: 0; color: var(--muted); }
+
+    .console-wrap { display: grid; grid-template-columns: 1fr .8fr; gap: 0; background: var(--code); color: var(--code-ink); box-shadow: var(--shadow); border-radius: 6px 18px 6px 18px; overflow: hidden; }
+    .console-main { padding: 35px; border-right: 1px solid rgba(220,255,244,.13); }
+    .console-side { padding: 35px; background: rgba(255,255,255,.025); }
+    .console-label { color: var(--code-muted); font: 11px "IBM Plex Mono", monospace; margin-bottom: 18px; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.7; }
+    .prompt { color: var(--mint-bright); }
+    .copy-button {
+      margin-top: 25px; border: 1px solid rgba(220,255,244,.28); background: transparent; color: var(--code-ink); border-radius: 6px;
+      padding: 10px 13px; cursor: pointer; font: 12px "IBM Plex Mono", monospace;
+    }
+    .copy-button:hover { border-color: var(--mint-bright); }
+    .source-list { list-style: none; padding: 0; margin: 0; }
+    .source-list li { padding: 13px 0; border-bottom: 1px solid rgba(220,255,244,.13); }
+    .source-list a { display: flex; justify-content: space-between; gap: 12px; text-decoration: none; font-size: 14px; }
+    .source-list a:hover { color: var(--mint-bright); }
+    .source-list span { color: var(--code-muted); font: 10px "IBM Plex Mono", monospace; }
+
+    footer { display: flex; justify-content: space-between; gap: 20px; padding: 34px 0 52px; color: var(--muted); font-size: 13px; }
+    footer a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line-strong); }
+
+    @keyframes pulse { 60%,100% { box-shadow: 0 0 0 10px rgba(47,215,169,0); } }
+    @keyframes breathe { from { transform: scaleX(.58); } to { transform: scaleX(1); } }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
+      canvas#synapses { display: none; }
+    }
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; gap: 54px; min-height: 0; padding: 64px 0 82px; }
+      .memory-window { max-width: 680px; width: 100%; margin: 0 auto; }
+      .section-head { grid-template-columns: 1fr; gap: 12px; }
+      .steps { grid-template-columns: 1fr; }
+      .step { min-height: 280px; }
+      .step h3 { margin-top: 44px; }
+      .proof-grid { grid-template-columns: 1fr; gap: 48px; }
+      .console-wrap { grid-template-columns: 1fr; }
+      .console-main { border-right: 0; border-bottom: 1px solid rgba(220,255,244,.13); }
+    }
+    @media (max-width: 560px) {
+      .shell { width: min(100% - 24px, 1180px); }
+      .topline { align-items: flex-start; padding: 16px 0; }
+      .topline > span:last-child { text-align: right; }
+      .hero { padding-top: 52px; }
+      h1 { font-size: clamp(46px, 15vw, 66px); }
+      .hero-copy > p:not(.eyebrow) { font-size: 18px; }
+      .hero-actions { display: grid; }
+      .button { width: 100%; }
+      .memory-window { min-height: 0; border-radius: 12px 3px 12px 3px; }
+      .viz { height: 246px; }
+      .memory-line { grid-template-columns: 46px minmax(0, 1fr); padding-inline: 6px; }
+      .section { padding: 78px 0; }
+      .section-head { margin-bottom: 38px; }
+      .step { padding: 25px; }
+      .principle { grid-template-columns: 58px 1fr; }
+      .console-main, .console-side { padding: 24px 20px; }
+      footer { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="synapses" aria-hidden="true"></canvas>
+  <div class="ambient" aria-hidden="true"></div>
+
+  <div class="shell">
+    <div class="topline">
+      <span class="release"><i class="pulse" aria-hidden="true"></i>v1.0.0 · public release</span>
+      <span>Hermes memory provider · MIT</span>
+    </div>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Every message stays within reach.</p>
+          <h1 id="hero-title">Memory that grows without losing its past.</h1>
+          <p>OptChat stores every Hermes Agent message in a log and organizes older messages into a summary tree. Hermes reads a compact view of the full history and can open any branch to see the original words.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="https://github.com/aska-digital/optchat-memory/releases/tag/v1.0.0" target="_blank" rel="noreferrer">
+              Get v1.0.0
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg>
+            </a>
+            <a class="button" href="#install">Install from Hermes</a>
+          </div>
+        </div>
+
+        <div class="memory-window" aria-label="Interactive memory tree model">
+          <div class="window-bar">
+            <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <span>VIEW / 16 KB BUDGET</span>
+            <span id="turnLabel">TURN 0248</span>
+          </div>
+          <div class="viz"><svg id="tree" role="img" aria-label="A live binary summary tree"></svg></div>
+          <div class="memory-readout">
+            <div class="readout-head"><strong>Current view</strong><span>oldest → newest</span></div>
+            <div class="memory-lines" id="memoryLines"></div>
+            <div class="window-controls">
+              <button class="play" id="playButton" type="button" aria-label="Pause memory growth">
+                <svg id="playIcon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2h3v12H3zm7 0h3v12h-3z"/></svg>
+              </button>
+              <input id="turnRange" type="range" min="232" max="272" value="248" aria-label="Choose a simulated conversation turn" />
+            </div>
+            <div class="zoom-note" id="zoomNote" aria-live="polite">Select a line to zoom into the memories below it.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="mechanism-title">
+        <div class="section-head">
+          <span class="section-no">01 / MECHANISM</span>
+          <div>
+            <h2 id="mechanism-title">Keep the full record at the right level of detail.</h2>
+            <p class="section-intro">Recent messages stay detailed. Older messages become short summaries that still link back to the original text.</p>
+          </div>
+        </div>
+        <div class="steps">
+          <article class="step">
+            <span class="step-index">LOG</span>
+            <div class="step-visual log-stack" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+            <h3>Store every turn</h3>
+            <p>User messages, replies, tool calls, tool results, and agent reports go into daily JSONL files, with one record per line. Existing records never change.</p>
+          </article>
+          <article class="step">
+            <span class="step-index">TREE</span>
+            <div class="step-visual binary-visual" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <h3>Build summaries upward</h3>
+            <p>Adjacent records merge into parent summaries in a binary tree. A smaller language model creates them in the background while the original log stays intact.</p>
+          </article>
+          <article class="step">
+            <span class="step-index">VIEW</span>
+            <div class="step-visual focus-visual" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            <h3>Open any level</h3>
+            <p>Hermes receives a compact view of the full history. <code>optchat_zoom</code> opens a summary until it reaches the original message.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="properties-title">
+        <div class="section-head">
+          <span class="section-no">02 / PROPERTIES</span>
+          <div>
+            <h2 id="properties-title">Built for conversations that outgrow the model’s context window.</h2>
+            <p class="section-intro">The saved history grows with the conversation. The text shown to the model stays within a set character limit.</p>
+          </div>
+        </div>
+        <div class="proof-grid">
+          <div>
+            <div class="big-number">∞</div>
+            <p class="big-number-label">The log has no fixed length limit. The original text remains available for search and zoom.</p>
+          </div>
+          <div class="principles">
+            <article class="principle">
+              <code>01</code>
+              <div><h3>Original text preserved</h3><p>The log keeps every original message. Summaries can be rebuilt without changing past messages.</p></div>
+            </article>
+            <article class="principle">
+              <code>02</code>
+              <div><h3>Fixed context size</h3><p>The view keeps recent messages detailed and groups older messages into broader summaries.</p></div>
+            </article>
+            <article class="principle">
+              <code>03</code>
+              <div><h3>View saved between runs</h3><p>The current layout is saved to disk and loaded at startup. This keeps the start of the prompt stable, which lets Hermes reuse its cached work.</p></div>
+            </article>
+            <article class="principle">
+              <code>04</code>
+              <div><h3>Handles common failures</h3><p>Memory reads and background summaries can run together safely. OptChat recovers from partial writes, splits long messages into pages, and limits retry attempts.</p></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="install" aria-labelledby="install-title">
+        <div class="section-head">
+          <span class="section-no">03 / INSTALL</span>
+          <div>
+            <h2 id="install-title">Install it from the Hermes catalog.</h2>
+            <p class="section-intro">OptChat is a public Hermes Agent memory provider. Install the plugin, then select it during memory setup.</p>
+          </div>
+        </div>
+        <div class="console-wrap">
+          <div class="console-main">
+            <div class="console-label">TERMINAL</div>
+            <pre><span class="prompt">$</span> hermes plugins install optchat
+<span class="prompt">$</span> hermes memory setup
+
+<span style="color:var(--code-muted)"># choose optchat as the memory provider</span></pre>
+            <button type="button" class="copy-button" id="copyButton">Copy install commands</button>
+          </div>
+          <aside class="console-side" aria-label="Project links">
+            <div class="console-label">SOURCE &amp; LINEAGE</div>
+            <ul class="source-list">
+              <li><a href="https://github.com/aska-digital/optchat-memory" target="_blank" rel="noreferrer">Plugin source <span>GITHUB ↗</span></a></li>
+              <li><a href="https://github.com/aska-digital/optchat-memory/releases/tag/v1.0.0" target="_blank" rel="noreferrer">v1.0.0 release <span>RELEASE ↗</span></a></li>
+              <li><a href="https://github.com/VictorTaelin/OptMem" target="_blank" rel="noreferrer">Original OptMem project <span>LINEAGE ↗</span></a></li>
+              <li><a href="https://gist.github.com/VictorTaelin/91837951a5ce5b38f341ec1ba1df6449" target="_blank" rel="noreferrer">OptChat design <span>SPEC ↗</span></a></li>
+            </ul>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>OptChat Memory · MIT licensed</span>
+      <span>Built for <a href="https://github.com/NousResearch/hermes-agent" target="_blank" rel="noreferrer">Hermes Agent</a></span>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var canvas = document.getElementById("synapses");
+      var ctx = canvas.getContext("2d");
+      var points = [];
+      var raf;
+      var colors = getComputedStyle(document.documentElement);
+      var inkColor = colors.getPropertyValue("--mint").trim() || "#00a981";
+
+      function resizeCanvas() {
+        var dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.floor(window.innerWidth * dpr);
+        canvas.height = Math.floor(window.innerHeight * dpr);
+        canvas.style.width = window.innerWidth + "px";
+        canvas.style.height = window.innerHeight + "px";
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        var target = Math.max(22, Math.min(62, Math.floor(window.innerWidth / 28)));
+        points = Array.from({ length: target }, function (_, i) {
+          return {
+            x: Math.random() * window.innerWidth,
+            y: Math.random() * window.innerHeight,
+            vx: (Math.random() - .5) * .12,
+            vy: (Math.random() - .5) * .12,
+            r: i % 9 === 0 ? 2.5 : 1.3
+          };
+        });
+      }
+
+      function drawNetwork() {
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        points.forEach(function (p, i) {
+          p.x += p.vx; p.y += p.vy;
+          if (p.x < -20) p.x = window.innerWidth + 20;
+          if (p.x > window.innerWidth + 20) p.x = -20;
+          if (p.y < -20) p.y = window.innerHeight + 20;
+          if (p.y > window.innerHeight + 20) p.y = -20;
+          for (var j = i + 1; j < points.length; j++) {
+            var q = points[j];
+            var dx = p.x - q.x, dy = p.y - q.y;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 150) {
+              ctx.globalAlpha = (1 - dist / 150) * .18;
+              ctx.strokeStyle = inkColor;
+              ctx.lineWidth = .65;
+              ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+            }
+          }
+          ctx.globalAlpha = p.r > 2 ? .52 : .25;
+          ctx.fillStyle = inkColor;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+        if (!reducedMotion) raf = requestAnimationFrame(drawNetwork);
+      }
+
+      resizeCanvas();
+      drawNetwork();
+      window.addEventListener("resize", function () { cancelAnimationFrame(raf); resizeCanvas(); drawNetwork(); });
+
+      var svg = document.getElementById("tree");
+      var range = document.getElementById("turnRange");
+      var label = document.getElementById("turnLabel");
+      var lines = document.getElementById("memoryLines");
+      var zoomNote = document.getElementById("zoomNote");
+      var playButton = document.getElementById("playButton");
+      var playIcon = document.getElementById("playIcon");
+      var playing = !reducedMotion;
+      var timer;
+      var sampleTexts = [
+        "Project decisions, source links, and accepted constraints",
+        "Earlier implementation notes, grouped into one branch",
+        "Recent tests and the reason each failure path matters",
+        "The newest exchange stays close to its original wording"
+      ];
+
+      function nodeData(turn) {
+        var base = Math.floor(turn / 32) * 32;
+        return [
+          { id: Math.max(0, base - 192), n: 128, level: 7, text: sampleTexts[0] },
+          { id: Math.max(0, base - 64), n: 32, level: 5, text: sampleTexts[1] },
+          { id: Math.max(0, base - 32), n: 16, level: 4, text: sampleTexts[2] },
+          { id: turn - 3, n: 4, level: 2, text: sampleTexts[3] }
+        ];
+      }
+
+      function renderTree(turn) {
+        var width = svg.clientWidth || 520;
+        var height = svg.clientHeight || 314;
+        svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+        var layers = 5;
+        var nodes = [];
+        var edges = [];
+        for (var l = 0; l < layers; l++) {
+          var count = Math.pow(2, l);
+          for (var i = 0; i < count; i++) {
+            var x = width * ((i + .5) / count);
+            var y = 35 + l * ((height - 74) / (layers - 1));
+            nodes.push({ x: x, y: y, level: l, index: i });
+            if (l > 0) {
+              var parentCount = Math.pow(2, l - 1);
+              var px = width * ((Math.floor(i / 2) + .5) / parentCount);
+              var py = 35 + (l - 1) * ((height - 74) / (layers - 1));
+              edges.push({ x1: px, y1: py, x2: x, y2: y });
+            }
+          }
+        }
+        var highlight = turn % 16;
+        var markup = '<g fill="none" stroke="var(--line-strong)" stroke-width="1">';
+        edges.forEach(function (e, i) {
+          var active = i > edges.length - 9 && ((i + highlight) % 4 === 0);
+          markup += '<line x1="' + e.x1 + '" y1="' + e.y1 + '" x2="' + e.x2 + '" y2="' + e.y2 + '"' + (active ? ' stroke="var(--mint)" stroke-width="1.7"' : '') + '/>';
+        });
+        markup += '</g>';
+        nodes.forEach(function (n, i) {
+          var live = n.level === 4 && n.index === highlight;
+          var recentlyMerged = n.level === 3 && n.index === Math.floor(highlight / 2);
+          var fill = live ? 'var(--coral)' : recentlyMerged ? 'var(--mint)' : 'var(--panel-solid)';
+          var stroke = live || recentlyMerged ? fill : 'var(--line-strong)';
+          var radius = live ? 5.5 : n.level < 2 ? 4.5 : 3.5;
+          markup += '<circle cx="' + n.x + '" cy="' + n.y + '" r="' + radius + '" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1.5"/>';
+        });
+        markup += '<text x="16" y="' + (height - 11) + '" fill="var(--muted)" font-family="IBM Plex Mono, monospace" font-size="9">RAW MESSAGES</text>';
+        markup += '<text x="16" y="20" fill="var(--muted)" font-family="IBM Plex Mono, monospace" font-size="9">SUMMARY ROOT</text>';
+        svg.innerHTML = markup;
+      }
+
+      function renderLines(turn) {
+        label.textContent = "TURN " + String(turn).padStart(4, "0");
+        lines.innerHTML = "";
+        nodeData(turn).forEach(function (item) {
+          var button = document.createElement("button");
+          button.type = "button";
+          button.className = "memory-line";
+          button.innerHTML = '<span class="id">' + item.id + '+' + item.n + '</span><span class="text">' + item.text + '</span>';
+          button.addEventListener("click", function () {
+            Array.prototype.forEach.call(lines.children, function (el) { el.classList.remove("active"); });
+            button.classList.add("active");
+            if (item.n === 4) {
+              zoomNote.textContent = "Zoom: " + item.id + "+4 opens " + item.id + "+2 and " + (item.id + 2) + "+2, then the four original messages.";
+            } else {
+              var half = item.n / 2;
+              zoomNote.textContent = "Zoom: " + item.id + "+" + item.n + " opens " + item.id + "+" + half + " and " + (item.id + half) + "+" + half + ".";
+            }
+          });
+          lines.appendChild(button);
+        });
+        renderTree(turn);
+      }
+
+      function startTimer() {
+        clearInterval(timer);
+        if (!playing) return;
+        timer = setInterval(function () {
+          var next = Number(range.value) + 1;
+          if (next > Number(range.max)) next = Number(range.min);
+          range.value = next;
+          renderLines(next);
+        }, 1000);
+      }
+
+      function setPlayIcon() {
+        if (playing) {
+          playButton.setAttribute("aria-label", "Pause memory growth");
+          playIcon.innerHTML = '<path d="M3 2h3v12H3zm7 0h3v12h-3z"/>';
+        } else {
+          playButton.setAttribute("aria-label", "Play memory growth");
+          playIcon.innerHTML = '<path d="M4 2.5v11L13 8z"/>';
+        }
+      }
+
+      range.addEventListener("input", function () { renderLines(Number(range.value)); });
+      playButton.addEventListener("click", function () { playing = !playing; setPlayIcon(); startTimer(); });
+      renderLines(Number(range.value));
+      setPlayIcon();
+      startTimer();
+
+      document.getElementById("copyButton").addEventListener("click", function () {
+        var button = this;
+        var text = "hermes plugins install optchat\nhermes memory setup";
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () {
+            button.textContent = "Copied";
+            setTimeout(function () { button.textContent = "Copy install commands"; }, 1600);
+          }).catch(function () { button.textContent = "Select commands above"; });
+        } else {
+          button.textContent = "Select commands above";
+        }
+      });
+    }());
+  </script>
+</body>
+</html>
